@@ -1,0 +1,15 @@
+[
+  {
+    "name": "Cafef",
+    "source": "https://cafef.vn",
+    "url": "https://cafef.vn/du-lieu/Ajax/Events_RelatedNews_New.aspx?",
+    "params": {
+      "symbol": "FPT", 
+      "floorID": 0,
+      "configID": 0,
+      "PageIndex": 1,
+      "PageSize": 30,
+      "Type": 2
+    }
+  }
+]
