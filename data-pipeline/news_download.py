@@ -104,8 +104,7 @@ def scrap_news(origin_url, params, START_DATE, END_DATE):
         response = requests.get(url = origin_url, params = params) 
         
         if response.status_code == 200:
-            print(f"START SCRAPING. SOURCE: {response.url}")
-            #print(response.text)
+            #print(response.url)
             soup = BeautifulSoup(response.text, "html.parser")
             news_items = soup.find_all('li')
             if not news_items:
@@ -116,11 +115,9 @@ def scrap_news(origin_url, params, START_DATE, END_DATE):
             batch_end_date = str_to_date(news_items[0].span.text)
 
             if batch_start_date > END_DATE:
-                print(f"TRUE. {batch_start_date} > {END_DATE}SKIP")
                 index +=1
                 continue
             if batch_end_date < START_DATE:
-                print(f"TRUE. {batch_end_date} < {START_DATE}\nEND THE SEARCH")
                 break
             for item in news_items:
                 cur_date = str_to_date(item.span.text)
@@ -156,14 +153,14 @@ def scrap_news(origin_url, params, START_DATE, END_DATE):
 
 def main():
     # Price data
-    price_data = pl.read_parquet(DATA_DIR / "price.parquet")
+    symbol = "FPT"
+    price_data = pl.read_parquet(DATA_DIR / f"{symbol}_price.parquet")
     START_DATE = price_data["time"].min()
     END_DATE = price_data["time"].max()
-    START_DATE = str_to_date("27/05/2025 10:20")
-    END_DATE = str_to_date("30/05/2025 08:45")
 
-    # Read source config
-    with open("sources_config.json") as f:
+    # Read source config 
+    config_file = CUR_DIR / "sources_config.json"
+    with open(config_file) as f:
         data_sources = json.load(f)
     cafef_source = data_sources[0]        
     url = cafef_source['url']
@@ -172,15 +169,70 @@ def main():
     
     try:
         print(f"Start scraping from {source}")
-        df = scrap_news(origin_url = url, params = params, START_DATE = START_DATE, END_DATE = END_DATE)
-        df.write_parquet(DATA_DIR / "news.parquet")
+        print(f"Date range: {START_DATE} to {END_DATE}")
+        df = scrap_news(origin_url=url, params=params, START_DATE=START_DATE, END_DATE=END_DATE)
+        
+        if len(df) == 0:
+            print("No news found in the specified date range")
+            return
+            
+        df.write_parquet(DATA_DIR / f"{symbol}_news.parquet")
         print("Saved news data successfully")
         print(f"Found {len(df)} news articles from {START_DATE} to {END_DATE}")
         print(f"Example:\n{df.head()}")
     except Exception as e:
         print(f"Error: {e}")
 
+def test_news_parquet():
+    """
+    Test function to preview downloaded news parquet data.
+    Uncomment in main to use.
+    """
+    # Change this path to test different symbols
+    test_file = DATA_DIR / "FPT_news.parquet"
+    
+    try:
+        df = pl.read_parquet(test_file)
+        print(f"\n--- Testing news parquet file: {test_file} ---")
+        print(f"Shape: {df.shape}")
+        print(f"Columns: {df.columns}")
+        
+        # Manual info display
+        print("\nColumn info:")
+        for col in df.columns:
+            dtype = df[col].dtype
+            null_count = df[col].null_count()
+            print(f"  {col}: {dtype} (null: {null_count})")
+        
+        # Content word count analysis
+        if 'content' in df.columns:
+            # Calculate word counts for each content
+            word_counts = df.select(
+                pl.col('content').str.split(' ').list.len().alias('word_count')
+            )['word_count']
+            
+            print(f"\nContent word count statistics:")
+            print(f"  Average words per article: {word_counts.mean():.1f}")
+            print(f"  Min words: {word_counts.min()}")
+            print(f"  Max words: {word_counts.max()}")
+            print(f"  Median words: {word_counts.median():.1f}")
+            
+            # Show distribution
+            print(f"\nWord count distribution:")
+            print(f"  < 100 words: {(word_counts < 100).sum()} articles")
+            print(f"  100-300 words: {((word_counts >= 100) & (word_counts <= 300)).sum()} articles")
+            print(f"  300-500 words: {((word_counts > 300) & (word_counts <= 500)).sum()} articles")
+            print(f"  > 500 words: {(word_counts > 500).sum()} articles")
+            
+        print(f"\nDate range: {df['date'].min()} to {df['date'].max()}")
+        print("\nFirst 5 rows:")
+        print(df.head())
+        print("\nLast 5 rows:")
+        print(df.tail())
+        
+    except Exception as e:
+        print(f"Error reading news parquet file: {e}")
+
 if __name__ == "__main__":
-    # Uncomment to test the rounding function
-    # test_round_to_trade_date()
-    main()
+    test_news_parquet()
+    #main()
