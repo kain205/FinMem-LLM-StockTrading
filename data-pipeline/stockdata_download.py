@@ -1,11 +1,7 @@
 #dependencies
-import requests
-import json
 from pathlib import Path
-from bs4 import BeautifulSoup
 from vnstock import Quote
 import polars as pl
-from datetime import datetime
 
 #const
 REPO_DIR = Path(__file__).parent.parent
