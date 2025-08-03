@@ -9,7 +9,14 @@ from datetime import datetime, timedelta
 #const
 REPO_DIR = Path(__file__).parent.parent
 DATA_DIR = REPO_DIR / "data"
+PRICE_DIR = DATA_DIR / "01_price"
+NEWS_DIR = DATA_DIR / "02_news"
 CUR_DIR = REPO_DIR / "data-pipeline"
+
+# Ensure directories exist
+PRICE_DIR.mkdir(parents=True, exist_ok=True)
+NEWS_DIR.mkdir(parents=True, exist_ok=True)
+
 SOURCE = "https://cafef.vn"
 
 def str_to_date(date_str):
@@ -154,7 +161,7 @@ def scrap_news(origin_url, params, START_DATE, END_DATE):
 def main():
     # Price data
     symbol = "FPT"
-    price_data = pl.read_parquet(DATA_DIR / f"{symbol}_price.parquet")
+    price_data = pl.read_parquet(PRICE_DIR / f"{symbol}_price.parquet")
     START_DATE = price_data["time"].min()
     END_DATE = price_data["time"].max()
 
@@ -176,7 +183,8 @@ def main():
             print("No news found in the specified date range")
             return
             
-        df.write_parquet(DATA_DIR / f"{symbol}_news.parquet")
+        # Save to news directory
+        df.write_parquet(NEWS_DIR / f"{symbol}_news.parquet")
         print("Saved news data successfully")
         print(f"Found {len(df)} news articles from {START_DATE} to {END_DATE}")
         print(f"Example:\n{df.head()}")
@@ -189,7 +197,7 @@ def test_news_parquet():
     Uncomment in main to use.
     """
     # Change this path to test different symbols
-    test_file = DATA_DIR / "FPT_news.parquet"
+    test_file = NEWS_DIR / "FPT_news.parquet"
     
     try:
         df = pl.read_parquet(test_file)
@@ -227,12 +235,11 @@ def test_news_parquet():
         print(f"\nDate range: {df['date'].min()} to {df['date'].max()}")
         print("\nFirst 5 rows:")
         print(df.head())
-        print("\nLast 5 rows:")
-        print(df.tail())
+        print(f"\nOne row example:\nTitle: {df[0, 0]}\nLink: {df[0, 1]}\nContent:\n{df[0,2]}\nDate: {df[0,3]}")
         
     except Exception as e:
         print(f"Error reading news parquet file: {e}")
 
 if __name__ == "__main__":
-    test_news_parquet()
-    #main()
+    #test_news_parquet()
+    main()
