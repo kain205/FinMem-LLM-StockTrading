@@ -26,6 +26,50 @@ SUMMARY_DIR.mkdir(parents=True, exist_ok=True)
 
 #pl.Config.set_fmt_str_lengths(200)
 
+def test_news_parquet():
+    """
+    Test function to preview downloaded news parquet data.
+    Uncomment in main to use.
+    """
+    # Change this path to test different symbols
+    test_file = SUMMARY_DIR / "FPT_summary.parquet"
+    
+    try:
+        df = pl.read_parquet(test_file)
+        print(f"\n--- Testing news parquet file: {test_file} ---")
+        print(f"Shape: {df.shape}")
+        print(f"Columns: {df.columns}")
+        
+        # Manual info display
+        print("\nColumn info:")
+        for col in df.columns:
+            dtype = df[col].dtype
+            null_count = df[col].null_count()
+            print(f"  {col}: {dtype} (null: {null_count})")
+        
+        # Summary word count analysis
+        if 'summary' in df.columns:
+            # Calculate word counts for each summary
+            word_counts = df.select(
+                pl.col('summary').str.split(' ').list.len().alias('word_count')
+            )['word_count']
+            
+            print(f"\nSummary word count statistics:")
+            print(f"  Average words per summary: {word_counts.mean():.1f}")
+            print(f"  Min words: {word_counts.min()}")
+            print(f"  Max words: {word_counts.max()}")
+            print(f"  Median words: {word_counts.median():.1f}")
+            
+            # Show distribution
+            print(f"\nWord count distribution:")
+            print(f"  < 100 words: {(word_counts < 100).sum()} articles")
+            print(f"  100-300 words: {((word_counts >= 100) & (word_counts <= 300)).sum()} articles")
+            print(f"  300-500 words: {((word_counts > 300) & (word_counts <= 500)).sum()} articles")
+            print(f"  > 500 words: {(word_counts > 500).sum()} articles")
+        print(f"\nOne summary example:\nContent:\n{df[0,2]}\nSummary: {df[0,4]}")
+        
+    except Exception as e:
+        print(f"Error reading news parquet file: {e}")
 
 def process_and_summarize_file(file_path, summary_func):
     try:
@@ -69,6 +113,7 @@ def main():
 if __name__ == "__main__":
     start_time = time.time()
     main()
+    #test_news_parquet()
     elapsed = time.time() - start_time
     print(f"\nTotal execution time: {elapsed:.2f} seconds")    
 
