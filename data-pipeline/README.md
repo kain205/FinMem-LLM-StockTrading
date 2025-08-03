@@ -10,11 +10,9 @@ This suite of Python scripts provides a comprehensive toolkit for generating *Fi
 
 1. **SEC API Data Download (`01_SEC_API_10k10q_download.py`):** 
    - Access U.S. Securities and Exchange Commission filings and data.
-   - Obtain an API Key from [SEC API](https://sec-api.io/).
 
-2. **Alpaca News API Data Download (`01_Alpaca_News_API_download.py`):**
+2. **News API Download (`01_Alpaca_News_API_download.py`):**
    - Fetch real-time financial news and historical articles for market analysis.
-   - API Key required, available at [Alpaca Markets](https://app.alpaca.markets/paper/dashboard/overview).
 
 3. **Refinitiv Real-Time News Download (`01-Refinitiv_Real_Time_News_download.sql`):**
    - Gather news content from the Refinitiv Real-Time News (**Private Dataset**), mainly comprising **Reuters** articles.

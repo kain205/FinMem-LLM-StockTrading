@@ -9,7 +9,7 @@ WAIT_TIME = 10
 
 class Model_Wrapper(ABC):
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS), wait=wait_fixed(WAIT_TIME))
-    def summarize(self, text, summary_token_size = 200):
+    def summarize(self, text, summary_token_size = 300):
         return self._summarize(text, summary_token_size)
     
     @abstractmethod
@@ -21,7 +21,16 @@ class OllamaWrapper(Model_Wrapper):
         self.model_name = model_name
         self.llm = OllamaLLM(model = self.model_name)
     def _summarize(self, text, summary_token_size):
-        prompt = f"Summarize the following news within {summary_token_size} tokens:\n{text}\nSummary:"
+        #        
+        prompt = f"""
+        Bạn là một trợ lý AI chuyên tóm tắt tin tức. Hãy tóm tắt bản tin sau đây một cách súc tích trong khoảng {summary_token_size} từ, tập trung vào các sự kiện và số liệu quan trọng nhất.
+
+        Bản tin:
+        {text}
+
+        Tóm tắt:
+        """
+        # prompt = f"Tóm tắt bản tin sau đây trong khoảng {summary_token_size} token:\n{text}\n\nTóm tắt:"
         summary = self.llm.invoke(prompt)
         return summary
 
@@ -32,11 +41,11 @@ class Chatgpt(Model_Wrapper):
         self.model_name = model_name
     
     def _summarize(self, text, summary_token_size):
-        prompt = f"Summarize the following news within {summary_token_size} tokens:\n{text}\nSummary:"
+        prompt = f"Tóm tắt bản tin sau đây trong khoảng {summary_token_size} token:\n\n{text}\n\nTóm tắt:"
         response = openai.ChatCompletion.create(
             model=self.model_name,
             messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "system", "content": "You are a senior business analysis."},
                 {"role": "user", "content": prompt},
             ]
         )
@@ -57,7 +66,7 @@ class Together(Model_Wrapper):
         )
         
     def _summarize(self, text, summary_token_size):
-        prompt = f"Summarize the following news within {summary_token_size} tokens:\n{text}\nSummary:"
+        prompt = f"Tóm tắt bản tin sau đây trong khoảng {summary_token_size} token:\n\n{text}\n\nTóm tắt:"
         return self.llm.invoke(prompt)
     
 class Dummy(Model_Wrapper):

@@ -18,10 +18,12 @@ DATA_DIR = REPO_DIR / "data"
 PRICE_DIR = DATA_DIR / "01_price"
 NEWS_DIR = DATA_DIR / "02_news"
 SUMMARY_DIR = DATA_DIR / "03_summary"
-OUTPUT_DIR = DATA_DIR / "04_model_input_log"
+FILING_DIR = DATA_DIR / "04_financial_filings"
+OUTPUT_DIR = DATA_DIR / "05_model_input_log"
 
 # Ensure directories exist
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+FILING_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def read_price_data(price_dir: Path, tickers: List[str]) -> Dict[datetime.date, Dict[str, Dict[str, float]]]:
@@ -91,11 +93,54 @@ def read_news_summary(summary_dir: Path, tickers: List[str]) -> Dict[datetime.da
     
     return combined_dict
 
-def create_empty_filing_data(tickers: List[str]) -> Tuple[Dict, Dict]:
-    """Creates empty filing data dictionaries for compatibility."""
-    empty_q = {}
-    empty_k = {}
-    return empty_q, empty_k
+def read_filing_data(data_dir: Path, tickers: List[str], price_dates: set = None) -> Tuple[Dict, Dict]:
+    """
+    Reads financial filing data for quarterly and annual reports.
+    
+    Args:
+        data_dir: Path to the directory containing financial filings
+        tickers: List of stock tickers
+        price_dates: Optional set of dates for which price data exists
+        
+    Returns:
+        Tuple of (quarterly_filings, annual_filings) dictionaries
+    """
+    filing_dir = data_dir / "04_financial_filings"
+    filing_q = {}
+    filing_k = {}
+    
+    for ticker in tickers:
+        # Check for quarterly filing data
+        q_file = filing_dir / f"{ticker}_filing_q.pkl"
+        if q_file.exists():
+            print(f"Reading quarterly filing data for {ticker}")
+            with open(q_file, 'rb') as f:
+                ticker_q = pickle.load(f)
+                # Merge into main dictionary, filtering by price dates if provided
+                for date, data in ticker_q.items():
+                    if price_dates is None or date in price_dates:
+                        filing_q[date] = data
+                    # else we skip this date since it doesn't have price data
+            print(f"Loaded {len(filing_q)} quarterly filings")
+        else:
+            print(f"Warning: Quarterly filing data for {ticker} not found at {q_file}")
+            
+        # Check for annual filing data
+        k_file = filing_dir / f"{ticker}_filing_k.pkl"
+        if k_file.exists():
+            print(f"Reading annual filing data for {ticker}")
+            with open(k_file, 'rb') as f:
+                ticker_k = pickle.load(f)
+                # Merge into main dictionary, filtering by price dates if provided
+                for date, data in ticker_k.items():
+                    if price_dates is None or date in price_dates:
+                        filing_k[date] = data
+                    # else we skip this date since it doesn't have price data
+            print(f"Loaded {len(filing_k)} annual filings")
+        else:
+            print(f"Warning: Annual filing data for {ticker} not found at {k_file}")
+    
+    return filing_q, filing_k
     
 if __name__ == '__main__':
 
@@ -112,29 +157,36 @@ if __name__ == '__main__':
     print("Reading news summary data...")
     news = read_news_summary(SUMMARY_DIR, tickers)
     
-    q, k = create_empty_filing_data(tickers)
+    print("Reading financial filing data...")
+    # Pass the set of dates with price data to filter filings
+    price_dates = set(price.keys())
+    q, k = read_filing_data(DATA_DIR, tickers, price_dates)
     
     # Update dictionaries to ensure all dates are represented in all datasets
-    for date in price.keys():
-        q.setdefault(date, {'filing_q': {}})
-        k.setdefault(date, {'filing_k': {}})
-        news.setdefault(date, {'news': {ticker: [] for ticker in tickers}})
+    all_dates = set(price.keys()) | set(news.keys()) | set(q.keys()) | set(k.keys())
+    print(f"Total unique dates across all datasets: {len(all_dates)}")
     
-    # Update news dictionary
-    for date, data in news.items():
-        if 'news' in data:
-            missing_tickers = [ticker for ticker in tickers if ticker not in data['news']]
-            for ticker in missing_tickers:
-                news[date]['news'][ticker] = []
-        if len(list(news[date]['news'].keys())) != len(tickers):
-            print('ERROR on:', date)
-    
-    # Sorting dictionaries
-    filled_q = dict(sorted(q.items()))
-    filled_k = dict(sorted(k.items()))
-    
+    for date in all_dates:
+        if date not in price:
+            print(f"Warning: Missing price data for {date}")
+        if date not in news:
+            news[date] = {'news': {ticker: [] for ticker in tickers}}
+        else:
+            # Ensure all tickers have news entries, even if empty
+            for ticker in tickers:
+                if ticker not in news[date]['news']:
+                    news[date]['news'][ticker] = []
+                    
     # Combining data
-    env_data = {key: (price[key], news[key], filled_q[key], filled_k[key]) for key in price.keys()}
+    env_data = {}
+    for key in sorted(price.keys()):
+        # Make sure all dictionaries have this key
+        news_data = news.get(key, {'news': {ticker: [] for ticker in tickers}})
+        q_data = q.get(key, {'filing_q': {}})
+        k_data = k.get(key, {'filing_k': {}})
+        
+        # Add data to env_data
+        env_data[key] = (price[key], news_data, q_data, k_data)
     
     # Save the combined data
     output_path = OUTPUT_DIR / "env_data.pkl"
@@ -142,6 +194,8 @@ if __name__ == '__main__':
         pickle.dump(env_data, file)
     
     print(f'Environment data saved to: {output_path}')
+    print(f'Total trading days: {len(env_data)}')
+    print(f'Date range: {min(env_data.keys())} to {max(env_data.keys())}')
     
     
 # Uncomment function below to test reading and viewing the env_data file
@@ -212,4 +266,4 @@ def test_env_data(file_path: Path):
         print(f"  Has filing_k data: {'Yes' if filing_k_data['filing_k'] else 'No'}")
 
 # To run the test function, uncomment this line:
-test_env_data(OUTPUT_DIR / "env_data.pkl")
+#test_env_data(OUTPUT_DIR / "env_data.pkl")
