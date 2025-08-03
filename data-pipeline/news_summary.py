@@ -71,3 +71,9 @@ if __name__ == "__main__":
     main()
     elapsed = time.time() - start_time
     print(f"\nTotal execution time: {elapsed:.2f} seconds")    
+
+
+'''
+Summarizing FPT news: 100%|█████████████████████████████████████████████████████████████| 225/225 [45:33<00:00, 12.15s/article]
+Total execution time: 2734.11 seconds
+'''
