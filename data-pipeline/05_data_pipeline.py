@@ -16,14 +16,12 @@ from typing import List, Tuple, Dict, Any
 REPO_DIR = Path(__file__).parent.parent
 DATA_DIR = REPO_DIR / "data"
 PRICE_DIR = DATA_DIR / "01_price"
-NEWS_DIR = DATA_DIR / "02_news"
 SUMMARY_DIR = DATA_DIR / "03_summary"
 FILING_DIR = DATA_DIR / "04_financial_filings"
 OUTPUT_DIR = DATA_DIR / "05_model_input_log"
 
 # Ensure directories exist
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-FILING_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def read_price_data(price_dir: Path, tickers: List[str]) -> Dict[datetime.date, Dict[str, Dict[str, float]]]:
@@ -142,8 +140,7 @@ def read_filing_data(data_dir: Path, tickers: List[str], price_dates: set = None
     
     return filing_q, filing_k
     
-if __name__ == '__main__':
-
+def main():
     # Define parameters
     START_DATE = '2020-01-01'
     END_DATE = '2024-05-25'
@@ -196,9 +193,6 @@ if __name__ == '__main__':
     print(f'Environment data saved to: {output_path}')
     print(f'Total trading days: {len(env_data)}')
     print(f'Date range: {min(env_data.keys())} to {max(env_data.keys())}')
-    
-    
-# Uncomment function below to test reading and viewing the env_data file
 
 def test_env_data(file_path: Path):
     """
@@ -265,5 +259,10 @@ def test_env_data(file_path: Path):
         print("\nFILING DATA (K):")
         print(f"  Has filing_k data: {'Yes' if filing_k_data['filing_k'] else 'No'}")
 
-# To run the test function, uncomment this line:
-#test_env_data(OUTPUT_DIR / "env_data.pkl")
+
+if __name__ == '__main__':
+    #main()
+    
+    # To run the test function, uncomment this line:
+    test_env_data(OUTPUT_DIR / "env_data.pkl")
+   
