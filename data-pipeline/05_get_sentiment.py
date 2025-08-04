@@ -314,7 +314,7 @@ def export_sub_symbol(cur_symbol_lst, senti_model_type):
 cur_symbol_lst = ['FPT']  
 input_file = INPUT_DIR / "env_data.pkl"
 
-if __name__ == "__main__":
+def main():
     # Check if input file exists
     if not input_file.exists():
         print(f"Error: Input file {input_file} not found")
@@ -334,6 +334,76 @@ if __name__ == "__main__":
     
     print("\nSentiment analysis complete!")
     print(f"Results saved to: {OUTPUT_DIR}")
+
+def view_sample_sentiment(symbol='FPT', model_type='finbert'):
+    """
+    View a sample of the sentiment analysis data to check structure and scores.
+    
+    Args:
+        symbol: Symbol to view data for (default: 'FPT')
+        model_type: Type of sentiment model used ('finbert' or 'vader')
+    """
+    # Construct the file path
+    file_path = OUTPUT_DIR / f"sentiment_{symbol}_{model_type}.pkl"
+    
+    if not file_path.exists():
+        print(f"Error: File {file_path} not found")
+        print(f"Run sentiment analysis for {symbol} with {model_type} first")
+        return
+    
+    print(f"\n{'='*60}")
+    print(f"SAMPLE SENTIMENT ANALYSIS DATA FOR {symbol}")
+    print(f"{'='*60}")
+    print(f"File: {file_path}")
+    
+    # Load the data
+    with open(file_path, "rb") as f:
+        sentiment_data = pickle.load(f)
+    
+    # Find a date with news
+    dates_with_news = [date for date in sentiment_data 
+                      if symbol in sentiment_data[date]['news'] 
+                      and sentiment_data[date]['news'][symbol]]
+    
+    if not dates_with_news:
+        print(f"No news found for {symbol}")
+        return
+    
+    # Get the first date with news
+    sample_date = dates_with_news[0]
+    print(f"\nSample date: {sample_date}")
+    
+    # Show overall structure
+    print("\nData structure:")
+    for key in sentiment_data[sample_date]:
+        if key == 'news':
+            news_count = len(sentiment_data[sample_date]['news'].get(symbol, []))
+            print(f"  - news: {news_count} items")
+        else:
+            print(f"  - {key}: {'Present' if symbol in sentiment_data[sample_date][key] else 'Not present'}")
+    
+    # Show a sample news item with sentiment
+    if symbol in sentiment_data[sample_date]['news'] and sentiment_data[sample_date]['news'][symbol]:
+        print("\nSample news item with sentiment scores:")
+        news_item = sentiment_data[sample_date]['news'][symbol][0]
+        
+        # Try to separate the original news from sentiment scores
+        if "The positive score for this news is" in news_item:
+            parts = news_item.split("The positive score for this news is")
+            original_news = parts[0].strip()
+            scores = "The positive score for this news is" + parts[1]
+            
+            print(f"\nOriginal news:\n{original_news[:500]}..." if len(original_news) > 500 else original_news)
+            print(f"\nSentiment scores:\n{scores}")
+        else:
+            print(f"\nNews with sentiment:\n{news_item[:500]}..." if len(news_item) > 500 else news_item)
+
+
+if __name__ == "__main__":
+    #main()
+        
+    # Uncomment to view a sample of the sentiment analysis data
+    view_sample_sentiment(symbol='FPT', model_type='finbert')
 
 # Uncomment to also run VADER sentiment analysis
 # print("\nRunning VADER sentiment analysis...")
