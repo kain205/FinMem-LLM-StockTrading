@@ -400,7 +400,7 @@ def view_sample_sentiment(symbol='FPT', model_type='finbert'):
 
 
 if __name__ == "__main__":
-    #main()
+    main()
         
     # Uncomment to view a sample of the sentiment analysis data
     view_sample_sentiment(symbol='FPT', model_type='finbert')
