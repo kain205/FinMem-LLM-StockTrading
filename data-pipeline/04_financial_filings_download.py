@@ -37,6 +37,21 @@ def map_quarter_to_date(year, quarter_length):
     else:
         raise ValueError(f"Invalid quarter length: {quarter_length}")
 
+def map_quarter_to_availability_date(year, quarter_length):
+    """
+    Map quarterly report to its availability date (20 days after quarter end).
+    
+    Args:
+        year (int): Year of the report
+        quarter_length (int): Quarter length (1=Q1, 2=Q2, 3=Q3, 4=Q4)
+        
+    Returns:
+        datetime.date: Availability date of the report
+    """
+    end_date = map_quarter_to_date(year, quarter_length)
+    # Add 20 days to get availability date
+    return end_date + datetime.timedelta(days=20)
+
 def process_financial_statements(symbol, lang='en', start_date=None, end_date=None):
     """
     Process financial statements for a ticker and format them for the data pipeline.
@@ -163,6 +178,79 @@ def save_financial_data(filing_q, filing_k, symbol, output_dir=FILING_DIR):
         pickle.dump(filing_k, f)
     print(f"Annual filing data saved to: {k_file}")
 
+def broadcast_filings_to_all_days(filing_q, filing_k, start_date, end_date):
+    """
+    Broadcast financial filings to all days in the date range.
+    
+    Args:
+        filing_q (dict): Dictionary of quarterly filing data
+        filing_k (dict): Dictionary of annual filing data
+        start_date (datetime.date): Start date of the range
+        end_date (datetime.date): End date of the range
+        
+    Returns:
+        tuple: (daily_filing_q, daily_filing_k) dictionaries with data for every day
+    """
+    # First, organize filings by availability date
+    q_availability = {}  # Map from availability date to filing data
+    k_availability = {}  # Map from availability date to filing data
+    
+    # Process quarterly filings
+    for report_date, data in filing_q.items():
+        year = data['filing_q'][list(data['filing_q'].keys())[0]]['year']
+        quarter = data['filing_q'][list(data['filing_q'].keys())[0]]['quarter']
+        availability_date = map_quarter_to_availability_date(year, quarter)
+        q_availability[availability_date] = (report_date, data)
+    
+    # Process annual filings (from Q4 reports)
+    for report_date, data in filing_k.items():
+        year = data['filing_k'][list(data['filing_k'].keys())[0]]['year']
+        availability_date = map_quarter_to_availability_date(year, 4)  # Q4 availability
+        k_availability[availability_date] = (report_date, data)
+    
+    # Now create dictionaries for all days
+    daily_filing_q = {}
+    daily_filing_k = {}
+    
+    # Sort availability dates for both quarterly and annual filings
+    q_avail_dates = sorted(q_availability.keys())
+    k_avail_dates = sorted(k_availability.keys())
+    
+    # Calculate one day
+    one_day = datetime.timedelta(days=1)
+    
+    # Iterate through all days in the range
+    current_date = start_date
+    while current_date <= end_date:
+        # Find the most recent quarterly filing available on this date
+        q_data = None
+        for avail_date in reversed(q_avail_dates):  # Start from most recent
+            if current_date >= avail_date:
+                q_data = q_availability[avail_date][1]  # Get the data
+                break
+        
+        # Find the most recent annual filing available on this date
+        k_data = None
+        for avail_date in reversed(k_avail_dates):  # Start from most recent
+            if current_date >= avail_date:
+                k_data = k_availability[avail_date][1]  # Get the data
+                break
+        
+        # Add data to daily dictionaries if available
+        if q_data:
+            daily_filing_q[current_date] = q_data
+        
+        if k_data:
+            daily_filing_k[current_date] = k_data
+        
+        # Move to next day
+        current_date += one_day
+    
+    print(f"Generated filing data for {len(daily_filing_q)} days (Q) and {len(daily_filing_k)} days (K)")
+    print(f"Date range: {start_date} to {end_date}")
+    
+    return daily_filing_q, daily_filing_k
+
 def main():
     symbol = "FPT"
     
@@ -177,22 +265,51 @@ def main():
     end_date = pd.to_datetime(end_date_str).date()
     
     # Process financial statements within the price data date range
+    # Note: We don't filter by date here because we need all statements
     filing_q, filing_k = process_financial_statements(
         symbol, 
-        start_date=start_date,
-        end_date=end_date
+        lang='en'
     )
     
-    # Save financial data
-    save_financial_data(filing_q, filing_k, symbol)
+    # Print original filing data counts
+    print(f"\nOriginal filing data:")
+    print(f"Quarterly filings: {len(filing_q)}")
+    print(f"Annual filings: {len(filing_k)}")
+    
+    # Broadcast to all days in the price data range
+    daily_filing_q, daily_filing_k = broadcast_filings_to_all_days(
+        filing_q,
+        filing_k,
+        start_date,
+        end_date
+    )
+    
+    # Save the broadcast filing data
+    print(f"\nSaving broadcast filing data:")
+    save_financial_data(daily_filing_q, daily_filing_k, symbol)
     
     # Print sample data for verification
-    if filing_q:
-        sample_date = list(filing_q.keys())[0]
-        print(f"\nSample quarterly filing data for {sample_date}:")
-        print(filing_q[sample_date])
+    if daily_filing_q:
+        # Show first and last date in range
+        print(f"\nBroadcast filing data date range: {min(daily_filing_q.keys())} to {max(daily_filing_q.keys())}")
+        
+        # Show sample data for a middle date
+        middle_date = start_date + (end_date - start_date) // 2
+        if middle_date in daily_filing_q:
+            print(f"\nSample quarterly filing data for {middle_date}:")
+            ticker = list(daily_filing_q[middle_date]['filing_q'].keys())[0]
+            filing_data = daily_filing_q[middle_date]['filing_q'][ticker]
+            print(f"Year: {filing_data['year']}, Quarter: {filing_data['quarter']}")
+            print(f"Revenue: {filing_data['revenue']}")
+            print(f"Net Profit: {filing_data['net_profit']}")
     
     print("\nFinancial data processing complete!")
 
 if __name__ == "__main__":
     main()
+    
+    # Uncomment to debug financial statement columns
+    # finance = Finance(symbol= "FPT", source='VCI')
+    # Get quarterly financial statements
+    # income_statement = finance.income_statement(period='quarterly', lang="en")    
+    # print(income_statement.info())

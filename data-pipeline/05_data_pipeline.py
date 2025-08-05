@@ -114,12 +114,15 @@ def read_filing_data(data_dir: Path, tickers: List[str], price_dates: set = None
             print(f"Reading quarterly filing data for {ticker}")
             with open(q_file, 'rb') as f:
                 ticker_q = pickle.load(f)
+                print(f"  Found {len(ticker_q)} quarterly filings")
+                
                 # Merge into main dictionary, filtering by price dates if provided
+                count = 0
                 for date, data in ticker_q.items():
                     if price_dates is None or date in price_dates:
                         filing_q[date] = data
-                    # else we skip this date since it doesn't have price data
-            print(f"Loaded {len(filing_q)} quarterly filings")
+                        count += 1
+                print(f"  Added {count} quarterly filings after price date filtering")
         else:
             print(f"Warning: Quarterly filing data for {ticker} not found at {q_file}")
             
@@ -129,12 +132,15 @@ def read_filing_data(data_dir: Path, tickers: List[str], price_dates: set = None
             print(f"Reading annual filing data for {ticker}")
             with open(k_file, 'rb') as f:
                 ticker_k = pickle.load(f)
+                print(f"  Found {len(ticker_k)} annual filings")
+                
                 # Merge into main dictionary, filtering by price dates if provided
+                count = 0
                 for date, data in ticker_k.items():
                     if price_dates is None or date in price_dates:
                         filing_k[date] = data
-                    # else we skip this date since it doesn't have price data
-            print(f"Loaded {len(filing_k)} annual filings")
+                        count += 1
+                print(f"  Added {count} annual filings after price date filtering")
         else:
             print(f"Warning: Annual filing data for {ticker} not found at {k_file}")
     
@@ -162,7 +168,19 @@ def main():
     # Update dictionaries to ensure all dates are represented in all datasets
     all_dates = set(price.keys()) | set(news.keys()) | set(q.keys()) | set(k.keys())
     print(f"Total unique dates across all datasets: {len(all_dates)}")
+    print(f"Price dates: {len(price.keys())}, News dates: {len(news.keys())}, Q filing dates: {len(q.keys())}, K filing dates: {len(k.keys())}")
     
+    # Check for filing dates that match with price dates
+    q_price_overlap = set(q.keys()) & set(price.keys())
+    k_price_overlap = set(k.keys()) & set(price.keys())
+    print(f"Q filing dates that match price dates: {len(q_price_overlap)}")
+    print(f"K filing dates that match price dates: {len(k_price_overlap)}")
+    
+    if len(q_price_overlap) == 0 and len(q.keys()) > 0:
+        print("\nWARNING: No quarterly filing dates match price dates!")
+        print("Sample filing date:", list(q.keys())[0])
+        print("Sample price date:", list(price.keys())[0])
+        
     for date in all_dates:
         if date not in price:
             print(f"Warning: Missing price data for {date}")
@@ -176,14 +194,27 @@ def main():
                     
     # Combining data
     env_data = {}
+    filing_q_added = 0
+    filing_k_added = 0
+    
     for key in sorted(price.keys()):
         # Make sure all dictionaries have this key
         news_data = news.get(key, {'news': {ticker: [] for ticker in tickers}})
+        
+        # Get filing data if available for this date
         q_data = q.get(key, {'filing_q': {}})
+        if key in q:
+            filing_q_added += 1
+            
         k_data = k.get(key, {'filing_k': {}})
+        if key in k:
+            filing_k_added += 1
         
         # Add data to env_data
         env_data[key] = (price[key], news_data, q_data, k_data)
+    
+    print(f"Added filing_q data for {filing_q_added} dates")
+    print(f"Added filing_k data for {filing_k_added} dates")
     
     # Save the combined data
     output_path = OUTPUT_DIR / "env_data.pkl"
@@ -221,6 +252,30 @@ def test_env_data(file_path: Path):
     dates = sorted(list(env_data.keys()))
     print(f"Date range: {dates[0]} to {dates[-1]}")
     
+    # Count dates with filing data
+    q_count = sum(1 for date in dates if env_data[date][2]['filing_q'])
+    k_count = sum(1 for date in dates if env_data[date][3]['filing_k'])
+    print(f"\nDates with quarterly filing data: {q_count} out of {total_days}")
+    print(f"Dates with annual filing data: {k_count} out of {total_days}")
+    
+    # Find dates with filing data
+    dates_with_q = [date for date in dates if env_data[date][2]['filing_q']]
+    dates_with_k = [date for date in dates if env_data[date][3]['filing_k']]
+    
+    if dates_with_q:
+        print("\nSample dates with quarterly filing data:")
+        for date in dates_with_q[:3]:
+            print(f"  {date}")
+    else:
+        print("\nNo dates with quarterly filing data found")
+        
+    if dates_with_k:
+        print("\nSample dates with annual filing data:")
+        for date in dates_with_k[:3]:
+            print(f"  {date}")
+    else:
+        print("\nNo dates with annual filing data found")
+    
     # Sample data for first and last day
     sample_dates = [dates[-3], dates[-4]]
     
@@ -254,15 +309,25 @@ def test_env_data(file_path: Path):
         
         # Display filing data status
         print("\nFILING DATA (Q):")
-        print(f"  Has filing_q data: {'Yes' if filing_q_data['filing_q'] else 'No'}")
+        if filing_q_data['filing_q']:
+            print(f"  Has filing_q data: Yes")
+            for ticker in filing_q_data['filing_q']:
+                print(f"  Ticker: {ticker}")
+        else:
+            print(f"  Has filing_q data: No")
         
         print("\nFILING DATA (K):")
-        print(f"  Has filing_k data: {'Yes' if filing_k_data['filing_k'] else 'No'}")
+        if filing_k_data['filing_k']:
+            print(f"  Has filing_k data: Yes")
+            for ticker in filing_k_data['filing_k']:
+                print(f"  Ticker: {ticker}")
+        else:
+            print(f"  Has filing_k data: No")
 
 
 if __name__ == '__main__':
-    #main()
+    main()
     
-    # To run the test function, uncomment this line:
+    # To run the test function after generating the env_data.pkl file
     test_env_data(OUTPUT_DIR / "env_data.pkl")
    
