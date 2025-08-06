@@ -18,7 +18,7 @@ DATA_DIR = REPO_DIR / "data"
 PRICE_DIR = DATA_DIR / "01_price"
 SUMMARY_DIR = DATA_DIR / "03_summary"
 FILING_DIR = DATA_DIR / "04_financial_filings"
-OUTPUT_DIR = DATA_DIR / "05_model_input_log"
+OUTPUT_DIR = DATA_DIR / "05_env_data"
 
 # Ensure directories exist
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

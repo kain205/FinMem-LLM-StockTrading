@@ -26,22 +26,22 @@ def sim_func(
         help="The environment data pickle path",
     ),
     start_time: str = typer.Option(
-        "2022-08-16", "-st", "--start-time", help="The start time"
+        "2020-01-01", "-st", "--start-time", help="The start time"
     ),
     end_time: str = typer.Option(
-        "2022-10-04", "-et", "--end-time", help="The end time"
+        "2024-05-25", "-et", "--end-time", help="The end time"
     ),
     run_mode: str = typer.Option(
         "train", "-rm", "--run-model", help="Run mode: train or test"
     ),
     config_path: str = typer.Option(
-        os.path.join("config", "amzn_tgi_config.toml"),
+        os.path.join("config", "fpt_ollama_config.toml"),
         "-cp",
         "--config-path",
         help="config file path",
     ),
     checkpoint_path: str = typer.Option(
-        os.path.join("data", "06_train_checkpoint"),
+        os.path.join("data", "07_train_checkpoint"),
         "-ckp",
         "--checkpoint-path",
         help="The checkpoint path",

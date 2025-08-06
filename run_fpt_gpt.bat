@@ -2,7 +2,7 @@
 set OPENAI_API_KEY=YOUR_OPENAI_API_KEY_HERE
 
 python run.py sim ^
-    --market-data-path data/05_model_input_log/env_data.pkl ^
+    --market-data-path data/05_env_data/env_data.pkl ^
     --start-time 2023-01-01 ^
     --end-time 2023-12-31 ^
     --run-model train ^

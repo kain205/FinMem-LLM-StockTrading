@@ -16,7 +16,7 @@ PRICE_DIR = DATA_DIR / "01_price"
 NEWS_DIR = DATA_DIR / "02_news"
 SUMMARY_DIR = DATA_DIR / "03_summary"
 FILING_DIR = DATA_DIR / "04_financial_filings"
-INPUT_DIR = DATA_DIR / "05_model_input_log"
+INPUT_DIR = DATA_DIR / "05_env_data"
 OUTPUT_DIR = DATA_DIR / "06_sentiment_analysis"
 
 # Ensure directories exist

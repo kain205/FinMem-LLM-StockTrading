@@ -1,33 +1,82 @@
 [tool.poetry]
-name = "finmem"
-version = "0.0.0"
-description = ""
-authors = ["Haohang Li <hli113@stevens.edu>"]
+name = "FinMemVN-stock-agent"
+version = "0.1.0"
+description = "AI agent mang kiến trúc FinMem được tinh chỉnh cho việc phân tích và giao dịch chứng khoán Việt Nam."
+authors = ["Nguyen Binh Thanh <thanh14022005@gmail.com>"] 
+readme = "README.md"
+license = "MIT" 
+packages = [{include = "your_package_name"}] # TODO: Thay bằng tên package code của bạn
 
+# Định nghĩa nguồn riêng cho PyTorch bản GPU để đảm bảo cài đặt đúng
 [[tool.poetry.source]]
-name = "torch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-priority = "supplemental"
+name = "torch-gpu"
+url = "https://download.pytorch.org/whl/cu126" # Giữ nguyên cu126 vì nó khớp với bản torch của bạn
+priority = "explicit"
 
 [tool.poetry.dependencies]
-python = ">= 3.10, < 3.11"
-tqdm = "^4.66.1"
-python-dotenv = "^1.0.1"
-rich = "^13.7.0"
-toml = "^0.10.2"
-typer = "^0.9.0"
-httpx = "^0.26.0"
-sortedcontainers = "^2.4.0"
-faiss-cpu = "^1.7.4"
-guardrails-ai = "^0.3.2"
-numpy = "^1.26.3"
-annotated-types = "^0.6.0"
-polars = "^0.20.5"
-langchain-community = "^0.0.15"
-torch = {version = "^2.2.0+cpu", source = "torch-cpu"}
+python = ">=3.10, <3.13" # Khuyến nghị một khoảng phiên bản an toàn
+
+# --- Lõi AI & Machine Learning ---
+# Torch và hệ sinh thái, lấy từ nguồn GPU đã định nghĩa
+torch = {version = "^2.7.1", source = "torch-gpu"}
+torchaudio = {version = "^2.7.1", source = "torch-gpu"}
+torchvision = {version = "^0.22.1", source = "torch-gpu"}
 transformers = "^4.37.2"
+faiss-cpu = "^1.7.4" # Đổi thành faiss-gpu nếu bạn cần tăng tốc trên GPU
+safetensors = "^0.4.2"
+tokenizers = "^0.15.2"
+
+# --- Hệ sinh thái LangChain & LLM ---
+langchain = "^0.3.27"
+langchain-community = "^0.3.27"
+langchain-core = "^0.3.72"
+langchain-ollama = "^0.3.6"
+langchain-text-splitters = "^0.3.9"
+ollama = "^0.5.2"
+openai = "^1.99.1" # Dù dùng Ollama, vẫn có thể cần thư viện này cho các tool khác
+litellm = "^1.75.0"
+tiktoken = "^0.10.0"
+
+# --- Guardrails - Đảm bảo AI an toàn ---
+guardrails-ai = "^0.6.6"
+
+# --- Xử lý & Phân tích dữ liệu ---
+pandas = "^2.3.1"
+polars = "^0.20.7"
+numpy = "^1.26.4"
+pyarrow = "^21.0.0" # Thường đi chung với pandas/polars để tăng tốc
+
+# --- API & Thư viện Chứng khoán Việt Nam ---
+vnstock = "^3.2.6"
+vnai = "^2.1.9" 
+
+# --- Giao diện dòng lệnh (CLI) & Cấu hình ---
+typer = {extras = ["rich"], version = "^0.9.0"} # Cài typer cùng với rich để có giao diện đẹp
+python-dotenv = "^1.0.1"
+toml = "^0.10.2"
+
+# --- Các tiện ích và thư viện nền tảng khác ---
+aiohttp = "^3.12.15" # Cho các tác vụ bất đồng bộ
+httpx = "^0.28.1"
+pydantic = "^2.11.7" # Thư viện cốt lõi cho rất nhiều gói AI
+tqdm = "^4.66.2" # Thanh tiến trình
+requests = "^2.31.0"
+SQLAlchemy = "^2.0.26" # Nếu có tương tác với database
+
+# --- Các thư viện cho plotting và visualization (tùy chọn) ---
+matplotlib = {version = "^3.10.3", optional = true}
+seaborn = {version = "^0.13.2", optional = true}
+wordcloud = {version = "^1.9.4", optional = true}
 
 [tool.poetry.dev-dependencies]
+# Các gói chỉ dùng cho phát triển, không cần khi deploy
+pytest = "^8.0.0"
+ipykernel = "^6.29.0" # Để chạy trong Jupyter Notebook
+ruff = "^0.2.0" # Linter và Formatter siêu nhanh
+
+[tool.poetry.extras]
+# Định nghĩa các nhóm dependency tùy chọn
+plotting = ["matplotlib", "seaborn", "wordcloud"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

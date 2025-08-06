@@ -166,4 +166,6 @@ aws/
 awscliv2.zip
 weights/
 tgi_scripts/data/
-data/
+
+data/*/
+!data/*/.gitkeep
