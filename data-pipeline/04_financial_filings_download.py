@@ -1,315 +1,278 @@
-import polars as pl
-import pandas as pd
-import pickle
-import datetime
 from pathlib import Path
+import datetime
+from typing import Dict, Tuple, Optional
+import pandas as pd
+import polars as pl
 from vnstock import Finance
+import pickle
 
-
-#const
 REPO_DIR = Path(__file__).parent.parent
 DATA_DIR = REPO_DIR / "data"
 PRICE_DIR = DATA_DIR / "01_price"
 FILING_DIR = DATA_DIR / "04_financial_filings"
 FILING_DIR.mkdir(parents=True, exist_ok=True)
-START_DATE = '2020-01-01'
-END_DATE = '2024-05-25'
 
-def map_quarter_to_date(year, quarter_length):
-    """
-    Map quarterly report to its corresponding date.
-    
-    Args:
-        year (int): Year of the report
-        quarter_length (int): Quarter length (1=Q1, 2=Q2, 3=Q3, 4=Q4)
-        
-    Returns:
-        datetime.date: End date of the quarter
-    """
-    if quarter_length == 1:  # Q1
-        return datetime.date(year, 3, 31)
-    elif quarter_length == 2:  # Q2
-        return datetime.date(year, 6, 30)
-    elif quarter_length == 3:  # Q3
-        return datetime.date(year, 9, 30)
-    elif quarter_length == 4:  # Q4
-        return datetime.date(year, 12, 31)
-    else:
-        raise ValueError(f"Invalid quarter length: {quarter_length}")
+START_DATE_STR: Optional[str] = None
+END_DATE_STR: Optional[str] = None
+AVAILABILITY_LAG_DAYS: int = 20
 
-def map_quarter_to_availability_date(year, quarter_length):
-    """
-    Map quarterly report to its availability date (20 days after quarter end).
-    
-    Args:
-        year (int): Year of the report
-        quarter_length (int): Quarter length (1=Q1, 2=Q2, 3=Q3, 4=Q4)
-        
-    Returns:
-        datetime.date: Availability date of the report
-    """
-    end_date = map_quarter_to_date(year, quarter_length)
-    # Add 20 days to get availability date
-    return end_date + datetime.timedelta(days=20)
 
-def process_financial_statements(symbol, lang='en', start_date=None, end_date=None):
-    """
-    Process financial statements for a ticker and format them for the data pipeline.
-    
-    Args:
-        symbol (str): Stock symbol (e.g., 'FPT')
-        lang (str): Language for reports ('en' or 'vn')
-        start_date (datetime.date, optional): Start date for filtering reports
-        end_date (datetime.date, optional): End date for filtering reports
-        
-    Returns:
-        tuple: (filing_q, filing_k) dictionaries for data pipeline
-    """
-    print(f"Processing financial statements for {symbol}...")
-    if start_date and end_date:
-        print(f"Filtering reports between {start_date} and {end_date}")
-    
-    # Initialize dictionaries
-    filing_q = {}
-    filing_k = {}  # Annual data will be derived from Q4 reports
+def _get_period_end_date(year: int, period: int = 4) -> datetime.date:
+    """Get end date for quarter or year."""
+    month = period * 3 if period <= 4 else 12
+    return datetime.date(year, month, 30)
+
+def _get_availability_date(year: int, period: int = 4) -> datetime.date:
+    """Get availability date for a report."""
+    end_date = _get_period_end_date(year, period)
+    return end_date + datetime.timedelta(days=AVAILABILITY_LAG_DAYS)
+
+def _safe_get(data, key: str) -> Optional[float]:
+    """Extract value safely from DataFrame or Series."""
+    try:
+        if isinstance(data, pd.DataFrame):
+            return data[key].values[0] if not data.empty and key in data.columns else None
+        return data[key] if key in data else None
+    except Exception:
+        return None
+
+def _safe_get_multi_index(df: pd.DataFrame, main_key: str, sub_key: str) -> Optional[float]:
+    """Get value from multi-index DataFrame."""
+    try:
+        return df[(main_key, sub_key)].values[0] if (main_key, sub_key) in df.columns else None
+    except Exception:
+        return None
+
+
+def _get_finance_data(finance: Finance, period: str, lang: str) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Optional[pd.DataFrame]]:
+    """Get all financial data for a period."""
+    income_statement = finance.income_statement(period=period, lang=lang)
+    balance_sheet = finance.balance_sheet(period=period, lang=lang)
+    cash_flow = finance.cash_flow(period=period, lang=lang)
     
     try:
-        # Initialize Finance object
-        finance = Finance(symbol=symbol, source='VCI')
+        ratio_df = finance.ratio(period=period, lang=lang)
+    except:
+        try:
+            ratio_df = finance.ratio(period=period, lang="")
+        except:
+            ratio_df = None
+            
+    return income_statement, balance_sheet, cash_flow, ratio_df
+
+def _get_aligned_rows(year: int, quarter: Optional[int], df: pd.DataFrame) -> pd.DataFrame:
+    """Get rows aligned by year and optional quarter."""
+    filter_cond = (df["yearReport"] == year)
+    if quarter is not None:
+        filter_cond &= (df["lengthReport"] == quarter)
+    return df[filter_cond]
+
+def _get_aligned_rows_multi(year: int, quarter: Optional[int], df: pd.DataFrame) -> pd.DataFrame:
+    """Get rows aligned by year and optional quarter."""
+    quarter = 5 if quarter is None else quarter
+    filter_cond = (df[("Meta","yearReport")] == year)
+    length_cond = (df[("Meta", "yearReport")] == quarter) 
+    return df[filter_cond & length_cond]
+
+
+def _build_indicators(row: pd.DataFrame, bs_row: pd.DataFrame, cf_row: pd.DataFrame, 
+                     ratio_row: Optional[pd.DataFrame], year: int, quarter: Optional[int], 
+                     report_date: datetime.date, report_type: str, symbol: str) -> Dict:
+    """Build financial indicators dictionary."""
+    indicators = {
+        "year": year,
+        "quarter": quarter,
+        "report_date": str(report_date),
+        "report_type": report_type,
         
-        # Get quarterly financial statements
-        income_statement = finance.income_statement(period='quarterly', lang=lang)
-        balance_sheet = finance.balance_sheet(period='quarterly', lang=lang)
-        cash_flow = finance.cash_flow(period='quarterly', lang=lang)
+        # Income Statement
+        "revenue_yoy_pct": _safe_get(row, "Revenue YoY (%)"),
+        "attribute_to_parent_yoy_pct": _safe_get(row, "Attribute to parent company YoY (%)"),
+        "revenue": _safe_get(row, "Revenue (Bn. VND)"),
+        "gross_profit": _safe_get(row, "Gross Profit"),
+        "operating_profit": _safe_get(row, "Operating Profit/Loss"),
+        "attribute_to_parent": _safe_get(row, "Attribute to parent company (Bn. VND)"),
+        "interest_expenses": _safe_get(row, "Interest Expenses"),
         
-        # Print debug info
-        print(f"Income statement columns: {income_statement.columns.tolist()}")
-        print(f"Balance sheet columns: {balance_sheet.columns.tolist()}")
-        print(f"Cash flow columns: {cash_flow.columns.tolist()}")
+        # Balance Sheet
+        "cash_equivalents": _safe_get(bs_row, "Cash and cash equivalents (Bn. VND)"),
+        "accounts_receivable": _safe_get(bs_row, "Accounts receivable (Bn. VND)"),
+        "net_inventories": _safe_get(bs_row, "Net Inventories"),
+        "total_assets": _safe_get(bs_row, "TOTAL ASSETS (Bn. VND)"),
+        "short_term_borrowings": _safe_get(bs_row, "Short-term borrowings (Bn. VND)"),
+        "long_term_borrowings": _safe_get(bs_row, "Long-term borrowings (Bn. VND)"),
+        "total_liabilities": _safe_get(bs_row, "LIABILITIES (Bn. VND)"),
+        "total_equity": _safe_get(bs_row, "OWNER'S EQUITY(Bn.VND)"),
         
-        # Process each report
-        for index, row in income_statement.iterrows():
-            year = row['yearReport']
-            quarter = row['lengthReport']
-            
-            # Map to a date
-            report_date = map_quarter_to_date(year, quarter)
-            
-            # Skip if report date is outside the requested date range
-            if (start_date and report_date < start_date) or (end_date and report_date > end_date):
-                continue
-                
-            # Get corresponding data from other statements
-            bs_row = balance_sheet[(balance_sheet['yearReport'] == year) & 
-                                (balance_sheet['lengthReport'] == quarter)]
-            cf_row = cash_flow[(cash_flow['yearReport'] == year) & 
-                            (cash_flow['lengthReport'] == quarter)]
-            
-            if bs_row.empty or cf_row.empty:
-                print(f"Warning: Missing data for {year} Q{quarter}")
-                continue
-            
-            # Extract key financial indicators
-            key_indicators = {
-                # Basic info
-                'year': year,
-                'quarter': quarter,
-                
-                # Income statement
-                'revenue': row['Revenue (Bn. VND)'] if 'Revenue (Bn. VND)' in row else None,
-                'net_profit': row['Net Profit For the Year'] if 'Net Profit For the Year' in row else None,
-                'gross_profit': row['Gross Profit'] if 'Gross Profit' in row else None,
-                'operating_profit': row['Operating Profit/Loss'] if 'Operating Profit/Loss' in row else None,
-                
-                # Balance sheet
-                'total_assets': bs_row['TOTAL ASSETS (Bn. VND)'].values[0] if 'TOTAL ASSETS (Bn. VND)' in bs_row.columns else None,
-                'total_equity': bs_row["OWNER'S EQUITY(Bn.VND)"].values[0] if "OWNER'S EQUITY(Bn.VND)" in bs_row.columns else None,
-                'total_liabilities': bs_row['LIABILITIES (Bn. VND)'].values[0] if 'LIABILITIES (Bn. VND)' in bs_row.columns else None,
-                'cash_equivalents': bs_row['Cash and cash equivalents (Bn. VND)'].values[0] if 'Cash and cash equivalents (Bn. VND)' in bs_row.columns else None,
-                
-                # Cash flow
-                'operating_cash_flow': cf_row['Net cash inflows/outflows from operating activities'].values[0] if 'Net cash inflows/outflows from operating activities' in cf_row.columns else None,
-                'investing_cash_flow': cf_row['Net Cash Flows from Investing Activities'].values[0] if 'Net Cash Flows from Investing Activities' in cf_row.columns else None,
-                'financing_cash_flow': cf_row['Cash flows from financial activities'].values[0] if 'Cash flows from financial activities' in cf_row.columns else None,
-                
-                # Financial ratios will be added later
-            }
-            
-            # Add to quarterly filings dictionary
-            filing_q[report_date] = {
-                'filing_q': {
-                    symbol: key_indicators
-                }
-            }
-            
-            # If this is Q4, also add to annual filings
-            if quarter == 4:
-                filing_k[report_date] = {
-                    'filing_k': {
-                        symbol: key_indicators
-                    }
-                }
+        # Cash Flow
+        "operating_cash_flow": _safe_get(cf_row, "Net cash inflows/outflows from operating activities"),
+        "investing_cash_flow": _safe_get(cf_row, "Net Cash Flows from Investing Activities"),
+        "financing_cash_flow": _safe_get(cf_row, "Cash flows from financial activities"),
+        "purchase_fixed_assets": _safe_get(cf_row, "Purchase of fixed assets"),
+        "dividends_paid": _safe_get(cf_row, "Dividends paid"),
         
-        print(f"Processed {len(filing_q)} quarterly reports and {len(filing_k)} annual reports")
+        "ratios": {}
+    }
+    
+    # Add ratios if available
+    if isinstance(ratio_row, pd.DataFrame) and not ratio_row.empty:
+        ratios = {
+            "borrowings_to_equity": _safe_get_multi_index(ratio_row, "Chỉ tiêu cơ cấu nguồn vốn", "(ST+LT borrowings)/Equity"),
+            "debt_to_equity": _safe_get_multi_index(ratio_row, "Chỉ tiêu cơ cấu nguồn vốn", "Debt/Equity"),
+            "asset_turnover": _safe_get_multi_index(ratio_row, "Chỉ tiêu hiệu quả hoạt động", "Asset Turnover"),
+            "days_sales_outstanding": _safe_get_multi_index(ratio_row, "Chỉ tiêu hiệu quả hoạt động", "Days Sales Outstanding"),
+            "days_inventory_outstanding": _safe_get_multi_index(ratio_row, "Chỉ tiêu hiệu quả hoạt động", "Days Inventory Outstanding"),
+            "days_payable_outstanding": _safe_get_multi_index(ratio_row, "Chỉ tiêu hiệu quả hoạt động", "Days Payable Outstanding"),
+            "cash_cycle": _safe_get_multi_index(ratio_row, "Chỉ tiêu hiệu quả hoạt động", "Cash Cycle"),
+            "inventory_turnover": _safe_get_multi_index(ratio_row, "Chỉ tiêu hiệu quả hoạt động", "Inventory Turnover"),
+            "ebit_margin_pct": _safe_get_multi_index(ratio_row, "Chỉ tiêu khả năng sinh lợi", "EBIT Margin (%)"),
+            "gross_profit_margin_pct": _safe_get_multi_index(ratio_row, "Chỉ tiêu khả năng sinh lợi", "Gross Profit Margin (%)"),
+            "net_profit_margin_pct": _safe_get_multi_index(ratio_row, "Chỉ tiêu khả năng sinh lợi", "Net Profit Margin (%)"),
+            "roe_pct": _safe_get_multi_index(ratio_row, "Chỉ tiêu khả năng sinh lợi", "ROE (%)"),
+            "roic_pct": _safe_get_multi_index(ratio_row, "Chỉ tiêu khả năng sinh lợi", "ROIC (%)"),
+            "roa_pct": _safe_get_multi_index(ratio_row, "Chỉ tiêu khả năng sinh lợi", "ROA (%)"),
+            "dividend_yield_pct": _safe_get_multi_index(ratio_row, "Chỉ tiêu khả năng sinh lợi", "Dividend yield (%)"),
+            "current_ratio": _safe_get_multi_index(ratio_row, "Chỉ tiêu thanh khoản", "Current Ratio"),
+            "cash_ratio": _safe_get_multi_index(ratio_row, "Chỉ tiêu thanh khoản", "Cash Ratio"),
+            "quick_ratio": _safe_get_multi_index(ratio_row, "Chỉ tiêu thanh khoản", "Quick Ratio"),
+            "interest_coverage": _safe_get_multi_index(ratio_row, "Chỉ tiêu thanh khoản", "Interest Coverage"),
+            "financial_leverage": _safe_get_multi_index(ratio_row, "Chỉ tiêu thanh khoản", "Financial Leverage"),
+            "market_capital": _safe_get_multi_index(ratio_row, "Chỉ tiêu định giá", "Market Capital (Bn. VND)"),
+            "pe": _safe_get_multi_index(ratio_row, "Chỉ tiêu định giá", "P/E"),
+            "pb": _safe_get_multi_index(ratio_row, "Chỉ tiêu định giá", "P/B"),
+            "ps": _safe_get_multi_index(ratio_row, "Chỉ tiêu định giá", "P/S"),
+            "pcf": _safe_get_multi_index(ratio_row, "Chỉ tiêu định giá", "P/Cash Flow"),
+            "eps": _safe_get_multi_index(ratio_row, "Chỉ tiêu định giá", "EPS (VND)"),
+            "bvps": _safe_get_multi_index(ratio_row, "Chỉ tiêu định giá", "BVPS (VND)"),
+            "ev_ebitda": _safe_get_multi_index(ratio_row, "Chỉ tiêu định giá", "EV/EBITDA"),
+        }
+        indicators["ratios"] = {k: v for k, v in ratios.items() if v is not None}
+    
+    return indicators
+
+def process_statements(symbol: str, period: str = "quarter", lang: str = "en",
+                      start_date: Optional[datetime.date] = None,
+                      end_date: Optional[datetime.date] = None) -> Dict[datetime.date, Dict]:
+    """Process financial statements for a given period type."""
+    print(f"Processing {period} statements for {symbol}...")
+    reports = {}
+    
+    try:
+        finance = Finance(symbol=symbol, source="VCI")
+        income_statement, balance_sheet, cash_flow, ratio_df = _get_finance_data(finance, period, lang)
+        
+        for _, row in income_statement.iterrows():
+            year = int(row["yearReport"])
+            quarter = int(row["lengthReport"]) if period == "quarter" else None
+            
+            report_date = _get_period_end_date(year, quarter if period == "quarter" else 4)
+                
+            bs_row = _get_aligned_rows(year, quarter, balance_sheet)
+            print("OK NO BUG")
+            cf_row = _get_aligned_rows(year, quarter, cash_flow)
+            print("OK NO BUG")
+            ratio_row = _get_aligned_rows_multi(year, quarter, ratio_df) 
+            print("OK NO BUG")
+            indicators = _build_indicators(row, bs_row, cf_row, ratio_row, year, quarter, 
+                                        report_date, period, symbol)
+            print("OK NO BUG")
+            filing_type = "filing_q" if period == "quarter" else "filing_k"
+            reports[report_date] = {filing_type: {symbol: indicators}}
+            
     except Exception as e:
-        print(f"Error processing financial statements: {e}")
-    
-    return filing_q, filing_k
+        print(f"Error processing {period} statements: {e}")
+        
+    return reports
 
-def save_financial_data(filing_q, filing_k, symbol, output_dir=FILING_DIR):
-    """
-    Save processed financial data to pickle files
+
+def broadcast_filings_to_all_days(reports: Dict[datetime.date, Dict],
+                              start_date: datetime.date, 
+                              end_date: datetime.date,
+                              is_quarterly: bool = True) -> Dict[datetime.date, Dict]:
+    """Broadcast filings to all days between start_date and end_date."""
+    availability = {}
+    filing_type = "filing_q" if is_quarterly else "filing_k"
     
-    Args:
-        filing_q (dict): Dictionary of quarterly filing data
-        filing_k (dict): Dictionary of annual filing data
-        symbol (str): Stock symbol
-        output_dir (Path): Directory to save output files
-    """
-    # Save quarterly data
-    q_file = output_dir / f"{symbol}_filing_q.pkl"
-    with open(q_file, 'wb') as f:
+    # Map report dates to availability dates
+    for rdate, payload in reports.items():
+        avail = rdate
+        availability[avail] = payload
+
+    if not availability:
+        return {}
+    
+    s = pd.Series(availability)
+    s.index = pd.to_datetime(s.index)
+    
+    date_range = pd.date_range(start = start_date, end = end_date, freq= "D")
+
+    daily_filing_series = s.reindex(date_range).ffill()
+    final_series = daily_filing_series.apply(lambda x: x if pd.notna(x) else {filing_type: {}})
+    return final_series.to_dict()
+
+def save_financial_data(filing_q: Dict[datetime.date, Dict],
+                     filing_k: Dict[datetime.date, Dict],
+                     symbol: str,
+                     output_dir: Path = FILING_DIR) -> None:
+    """Save financial data to pickle files and print summary."""
+    # Save files
+    with open(output_dir / f"{symbol}_filing_q.pkl", "wb") as f:
         pickle.dump(filing_q, f)
-    print(f"Quarterly filing data saved to: {q_file}")
-    
-    # Save annual data
-    k_file = output_dir / f"{symbol}_filing_k.pkl"
-    with open(k_file, 'wb') as f:
+    with open(output_dir / f"{symbol}_filing_k.pkl", "wb") as f:
         pickle.dump(filing_k, f)
-    print(f"Annual filing data saved to: {k_file}")
 
-def broadcast_filings_to_all_days(filing_q, filing_k, start_date, end_date):
-    """
-    Broadcast financial filings to all days in the date range.
+    # Count non-empty filings
+    q_count = sum(1 for data in filing_q.values() if data.get("filing_q"))
+    k_count = sum(1 for data in filing_k.values() if data.get("filing_k"))
     
-    Args:
-        filing_q (dict): Dictionary of quarterly filing data
-        filing_k (dict): Dictionary of annual filing data
-        start_date (datetime.date): Start date of the range
-        end_date (datetime.date): End date of the range
-        
-    Returns:
-        tuple: (daily_filing_q, daily_filing_k) dictionaries with data for every day
-    """
-    # First, organize filings by availability date
-    q_availability = {}  # Map from availability date to filing data
-    k_availability = {}  # Map from availability date to filing data
-    
-    # Process quarterly filings
-    for report_date, data in filing_q.items():
-        year = data['filing_q'][list(data['filing_q'].keys())[0]]['year']
-        quarter = data['filing_q'][list(data['filing_q'].keys())[0]]['quarter']
-        availability_date = map_quarter_to_availability_date(year, quarter)
-        q_availability[availability_date] = (report_date, data)
-    
-    # Process annual filings (from Q4 reports)
-    for report_date, data in filing_k.items():
-        year = data['filing_k'][list(data['filing_k'].keys())[0]]['year']
-        availability_date = map_quarter_to_availability_date(year, 4)  # Q4 availability
-        k_availability[availability_date] = (report_date, data)
-    
-    # Now create dictionaries for all days
-    daily_filing_q = {}
-    daily_filing_k = {}
-    
-    # Sort availability dates for both quarterly and annual filings
-    q_avail_dates = sorted(q_availability.keys())
-    k_avail_dates = sorted(k_availability.keys())
-    
-    # Calculate one day
-    one_day = datetime.timedelta(days=1)
-    
-    # Iterate through all days in the range
-    current_date = start_date
-    while current_date <= end_date:
-        # Find the most recent quarterly filing available on this date
-        q_data = None
-        for avail_date in reversed(q_avail_dates):  # Start from most recent
-            if current_date >= avail_date:
-                q_data = q_availability[avail_date][1]  # Get the data
-                break
-        
-        # Find the most recent annual filing available on this date
-        k_data = None
-        for avail_date in reversed(k_avail_dates):  # Start from most recent
-            if current_date >= avail_date:
-                k_data = k_availability[avail_date][1]  # Get the data
-                break
-        
-        # Add data to daily dictionaries if available
-        if q_data:
-            daily_filing_q[current_date] = q_data
-        
-        if k_data:
-            daily_filing_k[current_date] = k_data
-        
-        # Move to next day
-        current_date += one_day
-    
-    print(f"Generated filing data for {len(daily_filing_q)} days (Q) and {len(daily_filing_k)} days (K)")
-    print(f"Date range: {start_date} to {end_date}")
-    
-    return daily_filing_q, daily_filing_k
+    print(f"\nSaved {q_count}/{len(filing_q)} quarterly and {k_count}/{len(filing_k)} annual reports")
+    print(f"Data saved to: {output_dir}/{symbol}_filing_[q,k].pkl")
 
-def main():
-    symbol = "FPT"
-    
-    # Get price data to determine date range
-    price_data = pl.read_parquet(PRICE_DIR / f"{symbol}_price.parquet")
-    start_date_str = price_data["time"].min()
-    end_date_str = price_data["time"].max()
-    print(f"Price data range: {start_date_str} to {end_date_str}")
-    
-    # Convert to datetime.date objects
-    start_date = pd.to_datetime(start_date_str).date()
-    end_date = pd.to_datetime(end_date_str).date()
-    
-    # Process financial statements within the price data date range
-    # Note: We don't filter by date here because we need all statements
-    filing_q, filing_k = process_financial_statements(
-        symbol, 
-        lang='en'
-    )
-    
-    # Print original filing data counts
-    print(f"\nOriginal filing data:")
-    print(f"Quarterly filings: {len(filing_q)}")
-    print(f"Annual filings: {len(filing_k)}")
-    
-    # Broadcast to all days in the price data range
-    daily_filing_q, daily_filing_k = broadcast_filings_to_all_days(
-        filing_q,
-        filing_k,
-        start_date,
-        end_date
-    )
-    
-    # Save the broadcast filing data
-    print(f"\nSaving broadcast filing data:")
+    # Print sample data
+    for date in sorted(filing_q.keys()):
+        if filing_q[date].get("filing_q"):
+            data = filing_q[date]["filing_q"][symbol]
+            print(f"\nSample quarterly filing for {date}:")
+            print(f"  Year: {data.get('year')}, Quarter: {data.get('quarter')}")
+            print(f"  Revenue: {data.get('revenue')} Bn. VND")
+            break
+            
+    for date in sorted(filing_k.keys()):
+        if filing_k[date].get("filing_k"):
+            data = filing_k[date]["filing_k"][symbol]
+            print(f"\nSample annual filing for {date}:")
+            print(f"  Year: {data.get('year')}")
+            print(f"  Revenue: {data.get('revenue_yoy_pct')} Bn. VND")
+            break
+
+
+def main(symbol: str = "FPT", lang: str = "en") -> None:
+    """Download and process financial filing data."""
+    # Get date range
+    if START_DATE_STR and END_DATE_STR:
+        start_date = pd.to_datetime(START_DATE_STR).date()
+        end_date = pd.to_datetime(END_DATE_STR).date()
+        print(f"Using date range: {start_date} to {end_date}")
+    else:
+        price_path = PRICE_DIR / f"{symbol}_price.parquet"
+        if not price_path.exists():
+            raise FileNotFoundError(f"Price parquet not found: {price_path}")
+        price_data = pl.read_parquet(price_path)
+        start_date = pd.to_datetime(price_data["time"].min()).date()
+        end_date = pd.to_datetime(price_data["time"].max()).date()
+        print(f"Using price data range: {start_date} to {end_date}")
+
+    # Process and broadcast reports
+    print("\nProcessing statements...")
+    filing_q = process_statements(symbol, "quarter", lang, start_date, end_date)
+    filing_k = process_statements(symbol, "year", lang, start_date, end_date)
+
+    print("\nBroadcasting to daily records...")
+    daily_filing_q = broadcast_filings_to_all_days(filing_q, start_date, end_date, True)
+    daily_filing_k = broadcast_filings_to_all_days(filing_k, start_date, end_date, False)
+
     save_financial_data(daily_filing_q, daily_filing_k, symbol)
-    
-    # Print sample data for verification
-    if daily_filing_q:
-        # Show first and last date in range
-        print(f"\nBroadcast filing data date range: {min(daily_filing_q.keys())} to {max(daily_filing_q.keys())}")
-        
-        # Show sample data for a middle date
-        middle_date = start_date + (end_date - start_date) // 2
-        if middle_date in daily_filing_q:
-            print(f"\nSample quarterly filing data for {middle_date}:")
-            ticker = list(daily_filing_q[middle_date]['filing_q'].keys())[0]
-            filing_data = daily_filing_q[middle_date]['filing_q'][ticker]
-            print(f"Year: {filing_data['year']}, Quarter: {filing_data['quarter']}")
-            print(f"Revenue: {filing_data['revenue']}")
-            print(f"Net Profit: {filing_data['net_profit']}")
-    
-    print("\nFinancial data processing complete!")
+
 
 if __name__ == "__main__":
     main()
-    
-    # Uncomment to debug financial statement columns
-    # finance = Finance(symbol= "FPT", source='VCI')
-    # Get quarterly financial statements
-    # income_statement = finance.income_statement(period='quarterly', lang="en")    
-    # print(income_statement.info())
