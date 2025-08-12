@@ -346,3 +346,21 @@ if __name__ == '__main__':
     # To run the test function after generating the env_data.pkl file
     test_env_data(OUTPUT_DIR / "env_data.pkl")
    
+'''
+# Cấu trúc của một entry trong env_data
+{
+    datetime.date(2024, 8, 12): (
+        # [0] Dữ liệu giá
+        {'price': {'FPT': 135000.0}},
+
+        # [1] Dữ liệu tin tức
+        {'news': {'FPT': ['Tóm tắt tin 1...', 'Tóm tắt tin 2...']}},
+
+        # [2] Dữ liệu báo cáo tài chính Quý
+        {'filing_q': {'FPT': {'year': 2024, 'quarter': 2, 'revenue': ..., 'ratios': {...}}}},
+
+        # [3] Dữ liệu báo cáo tài chính Năm 
+        {'filing_k': {'FPT': {'year': 2023, 'quarter': None, 'revenue': ..., 'ratios': {...}}}}
+    )
+}
+'''
