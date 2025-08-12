@@ -41,13 +41,13 @@ def sim_func(
         help="config file path",
     ),
     checkpoint_path: str = typer.Option(
-        os.path.join("data", "train_checkpoint"),
+        os.path.join("data/model_output_data", "train_checkpoint"),
         "-ckp",
         "--checkpoint-path",
         help="The checkpoint path",
     ),
     result_path: str = typer.Option(
-        os.path.join("data", "train_model_output"),
+        os.path.join("data/model_output_data", "train_model_output"),
         "-rp",
         "--result-path",
         help="The result save path",
@@ -71,6 +71,7 @@ def sim_func(
     file_handler = logging.FileHandler(
         os.path.join(
             "data",
+            "model_output_data",
             "model_output_log",
             f'{config["general"]["trading_symbol"]}_run.log',
         ),
@@ -123,19 +124,19 @@ def sim_func(
 )
 def sim_checkpoint(
     checkpoint_path: str = typer.Option(
-        os.path.join("data", "06_train_checkpoint"),
+        os.path.join("data", "model_output_data", "train_checkpoint"),
         "-ckp",
         "--checkpoint-path",
         help="The checkpoint path",
     ),
     result_path: str = typer.Option(
-        os.path.join("data", "05_train_model_output"),
+        os.path.join("data", "model_output_data", "train_model_output"),
         "-rp",
         "--result-path",
         help="The result save path",
     ),
     config_path: str = typer.Option(
-        os.path.join("config", "aapl_tgi_config.toml"),
+        os.path.join("config", "fpt_ollama_config.toml"),
         "-cp",
         "--config-path",
         help="config file path",
@@ -156,7 +157,8 @@ def sim_checkpoint(
     file_handler = logging.FileHandler(
         os.path.join(
             "data",
-            "04_model_output_log",
+            "model_output_data",
+            "model_output_log",
             f'{config["general"]["trading_symbol"]}_run.log',
         ),
         mode="a",
