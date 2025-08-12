@@ -165,7 +165,7 @@ def process_statements(symbol: str, period: str = "quarter", lang: str = "en",
             year = int(row["yearReport"])
             quarter = int(row["lengthReport"]) if period == "quarter" else None
             
-            report_date = _get_period_end_date(year, quarter if period == "quarter" else 4)
+            report_date = _get_availability_date(year, quarter if period == "quarter" else 4)
                 
             bs_row = _get_aligned_rows(year, quarter, balance_sheet)
             cf_row = _get_aligned_rows(year, quarter, cash_flow)
