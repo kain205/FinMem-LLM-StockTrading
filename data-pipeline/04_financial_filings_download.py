@@ -206,7 +206,8 @@ def broadcast_filings_to_all_days(reports: Dict[datetime.date, Dict],
     
     final_series = daily_filing_series.loc[date_range]
     final_series = final_series.apply(lambda x: x if pd.notna(x) else {filing_type: {}})
-    return final_series.to_dict()
+    final_dict = final_series.to_dict()
+    return {key.date(): value for key, value in final_dict.items()}
 
 def save_financial_data(filing_q: Dict[datetime.date, Dict],
                      filing_k: Dict[datetime.date, Dict],
@@ -240,7 +241,7 @@ def save_financial_data(filing_q: Dict[datetime.date, Dict],
             data = filing_k[date]["filing_k"][symbol]
             print(f"\nSample annual filing for {date}:")
             print(f"  Year: {data.get('year')}")
-            print(f"  Revenue: {data.get('gross_profit_margin_pct')} Bn. VND")
+            print(f"  GPM: {data['ratios'].get('gross_profit_margin_pct')} Bn. VND")
             break
 
 
