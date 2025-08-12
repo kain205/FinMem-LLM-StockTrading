@@ -70,9 +70,9 @@ def _get_aligned_rows(year: int, quarter: Optional[int], df: pd.DataFrame) -> pd
 def _get_aligned_rows_multi(year: int, quarter: Optional[int], df: pd.DataFrame) -> pd.DataFrame:
     """Get rows aligned by year and optional quarter."""
     quarter = 5 if quarter is None else quarter
-    filter_cond = (df[("Meta","yearReport")] == year)
-    length_cond = (df[("Meta", "yearReport")] == quarter) 
-    return df[filter_cond & length_cond]
+    year_cond = (df[("Meta", "yearReport")] == year)
+    length_cond = (df[("Meta", "lengthReport")] == quarter) 
+    return df[year_cond & length_cond]
 
 
 def _build_indicators(row: pd.DataFrame, bs_row: pd.DataFrame, cf_row: pd.DataFrame, 
@@ -168,14 +168,10 @@ def process_statements(symbol: str, period: str = "quarter", lang: str = "en",
             report_date = _get_period_end_date(year, quarter if period == "quarter" else 4)
                 
             bs_row = _get_aligned_rows(year, quarter, balance_sheet)
-            print("OK NO BUG")
             cf_row = _get_aligned_rows(year, quarter, cash_flow)
-            print("OK NO BUG")
             ratio_row = _get_aligned_rows_multi(year, quarter, ratio_df) 
-            print("OK NO BUG")
             indicators = _build_indicators(row, bs_row, cf_row, ratio_row, year, quarter, 
                                         report_date, period, symbol)
-            print("OK NO BUG")
             filing_type = "filing_q" if period == "quarter" else "filing_k"
             reports[report_date] = {filing_type: {symbol: indicators}}
             
@@ -203,11 +199,13 @@ def broadcast_filings_to_all_days(reports: Dict[datetime.date, Dict],
     
     s = pd.Series(availability)
     s.index = pd.to_datetime(s.index)
-    
-    date_range = pd.date_range(start = start_date, end = end_date, freq= "D")
 
-    daily_filing_series = s.reindex(date_range).ffill()
-    final_series = daily_filing_series.apply(lambda x: x if pd.notna(x) else {filing_type: {}})
+    date_range = pd.date_range(start = start_date, end = end_date, freq= "D")
+    combined_index = s.index.union(date_range)
+    daily_filing_series = s.reindex(combined_index).ffill()
+    
+    final_series = daily_filing_series.loc[date_range]
+    final_series = final_series.apply(lambda x: x if pd.notna(x) else {filing_type: {}})
     return final_series.to_dict()
 
 def save_financial_data(filing_q: Dict[datetime.date, Dict],
@@ -237,12 +235,12 @@ def save_financial_data(filing_q: Dict[datetime.date, Dict],
             print(f"  Revenue: {data.get('revenue')} Bn. VND")
             break
             
-    for date in sorted(filing_k.keys()):
+    for date in sorted(filing_k.keys(), reverse= True):
         if filing_k[date].get("filing_k"):
             data = filing_k[date]["filing_k"][symbol]
             print(f"\nSample annual filing for {date}:")
             print(f"  Year: {data.get('year')}")
-            print(f"  Revenue: {data.get('revenue_yoy_pct')} Bn. VND")
+            print(f"  Revenue: {data.get('gross_profit_margin_pct')} Bn. VND")
             break
 
 
@@ -266,6 +264,10 @@ def main(symbol: str = "FPT", lang: str = "en") -> None:
     print("\nProcessing statements...")
     filing_q = process_statements(symbol, "quarter", lang, start_date, end_date)
     filing_k = process_statements(symbol, "year", lang, start_date, end_date)
+    q_count = sum(1 for data in filing_q.values() if data.get("filing_q"))
+    k_count = sum(1 for data in filing_k.values() if data.get("filing_k"))
+    
+    print(f"\nProcessing {q_count}/{len(filing_q)} quarterly and {k_count}/{len(filing_k)} annual reports")
 
     print("\nBroadcasting to daily records...")
     daily_filing_q = broadcast_filings_to_all_days(filing_q, start_date, end_date, True)
@@ -274,5 +276,235 @@ def main(symbol: str = "FPT", lang: str = "en") -> None:
     save_financial_data(daily_filing_q, daily_filing_k, symbol)
 
 
+def analyze_filing_data(symbol: str):
+    """Analyze the content and structure of filing data files.
+    
+    Args:
+        symbol (str): Stock symbol (e.g., 'FPT')
+    """
+    q_file = FILING_DIR / f"{symbol}_filing_q.pkl"
+    k_file = FILING_DIR / f"{symbol}_filing_k.pkl"
+    
+    if not (q_file.exists() and k_file.exists()):
+        print(f"Financial data files not found for {symbol}")
+        return
+        
+    with open(q_file, "rb") as f:
+        filing_q = pickle.load(f)
+    with open(k_file, "rb") as f:
+        filing_k = pickle.load(f)
+    
+    print(f"\nFinancial Filing Analysis for {symbol}")
+    print("=" * 80)
+    
+    # 1. Date Range Analysis
+    q_dates = sorted(filing_q.keys())
+    k_dates = sorted(filing_k.keys())
+    
+    print("\n1. Date Range Information:")
+    print("-" * 80)
+    print(f"Quarterly Filing Date Range: {q_dates[0]} to {q_dates[-1]}")
+    print(f"Annual Filing Date Range: {k_dates[0]} to {k_dates[-1]}")
+    print(f"Total Days with Data:")
+    print(f"  - Quarterly: {len(q_dates):,} days")
+    print(f"  - Annual: {len(k_dates):,} days")
+    
+    # 2. Data Availability Analysis
+    def count_reports(data_dict, filing_type):
+        return sum(1 for d in data_dict.values() if d.get(filing_type) and d[filing_type].get(symbol))
+    
+    q_reports = count_reports(filing_q, "filing_q")
+    k_reports = count_reports(filing_k, "filing_k")
+    
+    print("\n2. Data Availability:")
+    print("-" * 80)
+    print(f"Days with Quarterly Reports: {q_reports:,}/{len(q_dates):,} ({q_reports/len(q_dates)*100:.1f}%)")
+    print(f"Days with Annual Reports: {k_reports:,}/{len(k_dates):,} ({k_reports/len(k_dates)*100:.1f}%)")
+    
+    # 3. Report Frequency Analysis
+    def get_unique_reports(data_dict, filing_type):
+        unique_reports = set()
+        for data in data_dict.values():
+            if data.get(filing_type) and data[filing_type].get(symbol):
+                report = data[filing_type][symbol]
+                key = (report.get('year'), report.get('quarter'))
+                unique_reports.add(key)
+        return sorted(unique_reports)
+    
+    q_unique = get_unique_reports(filing_q, "filing_q")
+    k_unique = get_unique_reports(filing_k, "filing_k")
+    
+    print("\n3. Unique Reports:")
+    print("-" * 80)
+    print(f"Total Unique Quarterly Reports: {len(q_unique)}")
+    print("Most Recent Quarterly Reports:")
+    for year, quarter in q_unique[-5:]:
+        print(f"  - Year: {year}, Quarter: {quarter}")
+        
+    print(f"\nTotal Unique Annual Reports: {len(k_unique)}")
+    print("Most Recent Annual Reports:")
+    for year, _ in k_unique[-5:]:
+        print(f"  - Year: {year}")
+    
+    # 4. Data Structure Analysis
+    def get_sample_data(data_dict, filing_type):
+        for data in data_dict.values():
+            if data.get(filing_type) and data[filing_type].get(symbol):
+                return data[filing_type][symbol]
+        return None
+    
+    print("\n4. Data Structure:")
+    print("-" * 80)
+    
+    sample_q = get_sample_data(filing_q, "filing_q")
+    sample_k = get_sample_data(filing_k, "filing_k")
+    
+    if sample_q:
+        print("\nQuarterly Reports Structure:")
+        print("Main indicators:")
+        for key in sorted(k for k in sample_q.keys() if k != "ratios"):
+            value = sample_q[key]
+            value_type = type(value).__name__
+            print(f"  - {key:<25} ({value_type})")
+        
+        if "ratios" in sample_q:
+            print("\n  Financial Ratios Available:")
+            for key in sorted(sample_q["ratios"].keys()):
+                value = sample_q["ratios"][key]
+                value_type = type(value).__name__
+                print(f"    - {key:<23} ({value_type})")
+    
+    # 5. Data Continuity Analysis
+    def analyze_gaps(dates):
+        if not dates:
+            return []
+        gaps = []
+        for i in range(1, len(dates)):
+            gap = (dates[i] - dates[i-1]).days
+            if gap > 1:  # More than 1 day between reports
+                gaps.append((dates[i-1], dates[i], gap))
+        return gaps
+    
+    print("\n5. Data Continuity Analysis:")
+    print("-" * 80)
+    
+    # Get dates where actual reports exist (not just propagated data)
+    q_report_dates = [date for date in q_dates if filing_q[date].get("filing_q")]
+    k_report_dates = [date for date in k_dates if filing_k[date].get("filing_k")]
+    
+    q_gaps = analyze_gaps(q_report_dates)
+    k_gaps = analyze_gaps(k_report_dates)
+    
+    print("\nLargest gaps between consecutive reports:")
+    print("\nQuarterly Reports:")
+    for prev, next, days in sorted(q_gaps, key=lambda x: x[2], reverse=True)[:3]:
+        print(f"  {prev} to {next} ({days} days)")
+    
+    print("\nAnnual Reports:")
+    for prev, next, days in sorted(k_gaps, key=lambda x: x[2], reverse=True)[:3]:
+        print(f"  {prev} to {next} ({days} days)")
+
+def display_filing_sample(symbol: str):
+    """Display a sample entry from both quarterly and annual filing files.
+    
+    Args:
+        symbol (str): Stock symbol (e.g., 'FPT')
+    """
+    # Load the financial data
+    q_file = FILING_DIR / f"{symbol}_filing_q.pkl"
+    k_file = FILING_DIR / f"{symbol}_filing_k.pkl"
+    
+    if not (q_file.exists() and k_file.exists()):
+        print(f"Financial data files not found for {symbol}")
+        return
+        
+    with open(q_file, "rb") as f:
+        filing_q = pickle.load(f)
+    with open(k_file, "rb") as f:
+        filing_k = pickle.load(f)
+    
+    print(f"\nFinancial Filing Sample Data for {symbol}")
+    print("=" * 80)
+    
+    # Get one sample from each file
+    def get_sample_data(data_dict, filing_type):
+        for date, data in data_dict.items():
+            if data.get(filing_type) and data[filing_type].get(symbol):
+                return date, data[filing_type][symbol]
+        return None, None
+    
+    q_date, q_data = get_sample_data(filing_q, "filing_q")
+    k_date, k_data = get_sample_data(filing_k, "filing_k")
+    
+    # Display quarterly data sample
+    print("\nQuarterly Filing Sample:")
+    print("-" * 80)
+    if q_date and q_data:
+        print(f"Sample date: {q_date}")
+        print("\nMain indicators:")
+        for i, (key, value) in enumerate(sorted(q_data.items())):
+            if key != "ratios":
+                print(f"[{i:2d}] {key:<25}: {value}")
+        
+        if "ratios" in q_data:
+            print("\nFinancial Ratios:")
+            for i, (key, value) in enumerate(sorted(q_data["ratios"].items())):
+                print(f"[{i:2d}] {key:<25}: {value}")
+    else:
+        print("No quarterly data found")
+    
+    # Display annual data sample
+    print("\nAnnual Filing Sample:")
+    print("-" * 80)
+    if k_date and k_data:
+        print(f"Sample date: {k_date}")
+        print("\nMain indicators:")
+        for i, (key, value) in enumerate(sorted(k_data.items())):
+            if key != "ratios":
+                print(f"[{i:2d}] {key:<25}: {value}")
+        
+        if "ratios" in k_data:
+            print("\nFinancial Ratios:")
+            for i, (key, value) in enumerate(sorted(k_data["ratios"].items())):
+                print(f"[{i:2d}] {key:<25}: {value}")
+    else:
+        print("No annual data found")
+    
+    # File info
+    print("\nFile Information:")
+    print("-" * 80)
+    
+    # Display all available keys with their indices
+    if q_data:
+        print("\nQuarterly Data Keys:")
+        for i, key in enumerate(sorted(q_data.keys())):
+            if key != "ratios":
+                value = q_data[key]
+                print(f"  [{i}] {key}: {value}")
+        
+        if "ratios" in q_data:
+            print("\nQuarterly Ratios Keys:")
+            for i, key in enumerate(sorted(q_data["ratios"].keys())):
+                value = q_data["ratios"][key]
+                print(f"  [{i}] {key}: {value}")
+    
+    if k_data:
+        print("\nAnnual Data Keys:")
+        for i, key in enumerate(sorted(k_data.keys())):
+            if key != "ratios":
+                value = k_data[key]
+                print(f"  [{i}] {key}: {value}")
+        
+        if "ratios" in k_data:
+            print("\nAnnual Ratios Keys:")
+            for i, key in enumerate(sorted(k_data["ratios"].keys())):
+                value = k_data["ratios"][key]
+                print(f"  [{i}] {key}: {value}")
+
+
+
+
 if __name__ == "__main__":
     main()
+    # Uncomment to test
+    #display_filing_sample("FPT")
