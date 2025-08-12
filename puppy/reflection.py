@@ -6,9 +6,44 @@ from datetime import date
 from .run_type import RunMode
 from pydantic import BaseModel, Field
 from httpx import HTTPStatusError
-from guardrails.validators import ValidChoices
-from typing import List, Callable, Dict, Union, Any, Tuple
+from guardrails import Validator
+from typing import List, Callable, Dict, Union, Any, Tuple, cast
 from .chat import LongerThanContextError
+from .prompts import (
+    short_memory_id_desc,
+    mid_memory_id_desc,
+    long_memory_id_desc,
+    reflection_memory_id_desc,
+    train_prompt,
+    train_memory_id_extract_prompt,
+    train_trade_reason_summary,
+    train_investment_info_prefix,
+    test_prompt,
+    test_trade_reason_summary,
+    test_memory_id_extract_prompt,
+    test_invest_action_choice,
+    test_investment_info_prefix,
+    test_sentiment_explanation,
+    test_momentum_explanation,
+)
+
+
+# Tạo validator tùy chỉnh để thay thế ValidChoices
+class CustomChoices(Validator):
+    """Validates that the value is one of the choices."""
+    
+    def __init__(self, choices, on_fail="error"):
+        super().__init__(on_fail=on_fail)
+        self.choices = choices
+
+    def validate(self, value, metadata=None):
+        # Kiểm tra giá trị có trong danh sách lựa chọn không
+        if value in self.choices:
+            return gd.validators.PassResult()
+        else:
+            return gd.validators.FailResult(
+                error_message=f"Value {value} is not one of the valid choices: {self.choices}"
+            )
 from .prompts import (
     short_memory_id_desc,
     mid_memory_id_desc,
@@ -35,7 +70,7 @@ def _train_memory_factory(memory_layer: str, id_list: List[int]):
             description=train_memory_id_extract_prompt.format(
                 memory_layer=memory_layer
             ),
-            validators=[ValidChoices(id_list, on_fail="reask")],  # type: ignore
+            validators=[CustomChoices(id_list, on_fail="reask")],  # type: ignore
         )
 
     return Memory
@@ -46,7 +81,7 @@ def _test_memory_factory(memory_layer: str, id_list: List[int]):
         memory_index: int = Field(
             ...,
             description=test_memory_id_extract_prompt.format(memory_layer=memory_layer),
-            validators=[ValidChoices(id_list)],  # type: ignore
+            validators=[CustomChoices(id_list)],  # type: ignore
         )
 
     return Memory
@@ -108,7 +143,7 @@ def _test_reflection_factory(
         investment_decision: str = Field(
             ...,
             description=test_invest_action_choice,
-            validators=[ValidChoices(choices=["buy", "sell", "hold"])],  # type: ignore
+            validators=[CustomChoices(["buy", "sell", "hold"])],  # type: ignore
         )
         summary_reason: str = Field(
             ...,

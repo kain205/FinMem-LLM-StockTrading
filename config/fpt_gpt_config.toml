@@ -1,0 +1,53 @@
+[chat]
+model = "gpt-3.5-turbo-0125"
+end_point = "https://api.openai.com/v1/chat/completions"
+max_token_short = 300
+max_token_mid = 80
+max_token_long = 80
+max_token_reflection = 50
+system_message = "You are a helpful assistant."
+
+
+[general]
+top_k = 3
+agent_name = "agent_1"
+look_back_window_size = 7
+trading_symbol = "FPT"
+character_string = '''
+You accumulate a lot of information about the following sectors so you are especially good at trading them:
+(1) Information Technology and Software Services.
+(2) Telecommunications.
+(3) Education and Training.
+(4) Digital Transformation.
+(5) System Integration.
+(6) Outsourcing and Offshoring.
+
+You are an expert on FPT Corporation (FPT).
+FPT is Vietnam's leading IT services company with a global presence. The company provides technology, telecommunications, and education services. From 2020 to 2024, FPT has shown consistent growth in its core businesses, particularly in the software services and digital transformation segments.
+'''
+
+
+[agent.agent_1.embedding.detail]
+embedding_model = "text-embedding-ada-002"
+chunk_size=5000
+verbose=false
+
+
+[short]
+importance_score_initialization = "sample"
+decay_params = {recency_factor=3.0, importance_factor=0.92}
+clean_up_threshold_dict = {recency_threshold=0.05, importance_threshold=5}
+jump_threshold_upper = 60
+
+[mid]
+jump_threshold_lower = 60
+jump_threshold_upper = 80 
+importance_score_initialization = "sample"
+decay_params = {recency_factor=90.0, importance_factor=0.967}
+clean_up_threshold_dict = {recency_threshold=0.05, importance_threshold=5}
+
+[long]
+jump_threshold_lower = 80
+importance_score_initialization = "sample"
+decay_params = {recency_factor=365.0, importance_factor=0.988}
+clean_up_threshold_dict = {recency_threshold=0.05, importance_threshold=5}

@@ -20,7 +20,7 @@ warnings.filterwarnings("ignore")
 @app.command("sim", help="Start Simulation", rich_help_panel="Simulation")
 def sim_func(
     market_data_info_path: str = typer.Option(
-        os.path.join("data", "03_model_input", "amzn.pkl"),
+        os.path.join("data", "05_env_data", "env_data.pkl"),
         "-mdp",
         "--market-data-path",
         help="The environment data pickle path",
@@ -41,13 +41,13 @@ def sim_func(
         help="config file path",
     ),
     checkpoint_path: str = typer.Option(
-        os.path.join("data", "07_train_checkpoint"),
+        os.path.join("data", "train_checkpoint"),
         "-ckp",
         "--checkpoint-path",
         help="The checkpoint path",
     ),
     result_path: str = typer.Option(
-        os.path.join("data", "05_train_model_output"),
+        os.path.join("data", "train_model_output"),
         "-rp",
         "--result-path",
         help="The result save path",
@@ -71,7 +71,7 @@ def sim_func(
     file_handler = logging.FileHandler(
         os.path.join(
             "data",
-            "04_model_output_log",
+            "model_output_log",
             f'{config["general"]["trading_symbol"]}_run.log',
         ),
         mode="a",
