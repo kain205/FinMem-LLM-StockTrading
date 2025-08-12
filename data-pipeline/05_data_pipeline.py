@@ -115,7 +115,15 @@ def read_filing_data(data_dir: Path, tickers: List[str], price_dates: set = None
             with open(q_file, 'rb') as f:
                 ticker_q = pickle.load(f)
                 print(f"  Found {len(ticker_q)} quarterly filings")
-                
+
+                if ticker_q and price_dates: # Đảm bảo không rỗng
+                    sample_filing_date = list(ticker_q.keys())[0]
+                    sample_price_date = list(price_dates)[0]
+                    print("\n--- DEBUGGING DATES ---")
+                    print(f"Sample Filing Date: {sample_filing_date} (type: {type(sample_filing_date)})")
+                    print(f"Sample Price Date:  {sample_price_date} (type: {type(sample_price_date)})")
+                    print("--- END DEBUGGING ---\n")             
+
                 # Merge into main dictionary, filtering by price dates if provided
                 count = 0
                 for date, data in ticker_q.items():
@@ -277,7 +285,7 @@ def test_env_data(file_path: Path):
         print("\nNo dates with annual filing data found")
     
     # Sample data for first and last day
-    sample_dates = [dates[-3], dates[-4]]
+    sample_dates = [dates[-3], dates[-250]]
     
     for date in sample_dates:
         print(f"\n{'-'*50}")
@@ -313,6 +321,10 @@ def test_env_data(file_path: Path):
             print(f"  Has filing_q data: Yes")
             for ticker in filing_q_data['filing_q']:
                 print(f"  Ticker: {ticker}")
+                print(f"  GPM: {filing_q_data['filing_q'][ticker]['ratios']['gross_profit_margin_pct']}")
+                print(f"  Year: {filing_q_data['filing_q'][ticker]['year']}\nQuarter: {filing_q_data['filing_q'][ticker]['quarter']}")
+
+
         else:
             print(f"  Has filing_q data: No")
         
@@ -321,6 +333,9 @@ def test_env_data(file_path: Path):
             print(f"  Has filing_k data: Yes")
             for ticker in filing_k_data['filing_k']:
                 print(f"  Ticker: {ticker}")
+                print(f"  GPM: {filing_q_data['filing_q'][ticker]['ratios']['gross_profit_margin_pct']}")
+                print(f"  Year: {filing_q_data['filing_q'][ticker]['year']}\nQuarter: {filing_q_data['filing_q'][ticker]['quarter']}")
+
         else:
             print(f"  Has filing_k data: No")
 
